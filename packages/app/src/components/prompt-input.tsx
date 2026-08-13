@@ -82,6 +82,7 @@ import { createPromptInputTransientState } from "./prompt-input/transient-state"
 import { showToast } from "@/utils/toast"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import type { ReferenceInfo } from "@opencode-ai/sdk/v2/client"
+import { NetworkPreset } from "@opencode-ai/core/session/network-preset"
 
 export { createPromptInputHistory }
 export type { PromptInputControls, PromptInputHistory, PromptInputProps, PromptInputState, PromptInputSubmission }
@@ -1197,6 +1198,23 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!id) return permission.isAutoAcceptingDirectory(sdk().directory)
     return permission.isAutoAccepting(id, sdk().directory)
   })
+  const networkPreset = createMemo(() => NetworkPreset.enabled(info()?.metadata))
+  const toggleNetworkPreset = async () => {
+    const session = info()
+    if (!session) return
+    await sdk()
+      .client.session.update({
+        sessionID: session.id,
+        directory: sdk().directory,
+        metadata: { ...session.metadata, [NetworkPreset.metadataKey]: !networkPreset() },
+      })
+      .catch(() =>
+        showToast({
+          title: language.t("settings.permissions.title"),
+          description: language.t("common.requestFailed"),
+        }),
+      )
+  }
 
   const { abort, handleSubmit } =
     props.submission ??
@@ -1780,6 +1798,35 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                           />
                         </TooltipKeybind>
                       </div>
+                    </Show>
+                    <Show when={props.controls.session.id}>
+                      <Tooltip
+                        placement="top"
+                        gutter={4}
+                        value={
+                          networkPreset()
+                            ? `${language.t("settings.permissions.action.allow")}: ${language.t("settings.permissions.tool.webfetch.title")}, ${language.t("settings.permissions.tool.websearch.title")}`
+                            : `${language.t("settings.permissions.action.deny")}: ${language.t("settings.permissions.tool.webfetch.title")}, ${language.t("settings.permissions.tool.websearch.title")}`
+                        }
+                      >
+                        <Button
+                          variant="ghost"
+                          size="normal"
+                          style={control()}
+                          data-action="prompt-network-preset"
+                          aria-pressed={networkPreset()}
+                          onClick={() => void toggleNetworkPreset()}
+                        >
+                          <Icon name={networkPreset() ? "circle-ban-sign" : "shield"} size="small" />
+                          <span>
+                            {networkPreset()
+                              ? language.t("settings.permissions.action.allow")
+                              : language.t("settings.permissions.action.deny")}
+                            {" "}
+                            {language.t("settings.permissions.tool.websearch.title")}
+                          </span>
+                        </Button>
+                      </Tooltip>
                     </Show>
                   </Show>
                 </Show>
