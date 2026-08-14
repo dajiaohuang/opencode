@@ -27,6 +27,7 @@ import { useSync } from "@/context/sync"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { showToast } from "@/utils/toast"
 import { PromptInputV2, type PromptInputV2Suggestion } from "@opencode-ai/session-ui/v2/prompt-input"
+import { NetworkPreset } from "@opencode-ai/core/session/network-preset"
 import {
   createPromptInputV2Controller,
   createPromptInputV2State,
@@ -42,6 +43,11 @@ export type PromptInputV2ComposerProps = {
 export type PromptInputV2ControllerProps = Omit<PromptInputProps, "class" | "submission">
 export type PromptInputV2ComposerController = PromptInputV2Interaction & {
   readonly model: PromptInputProps["controls"]["model"]
+  readonly networkPreset: {
+    readonly visible: boolean
+    readonly enabled: boolean
+    toggle(): Promise<void>
+  }
 }
 
 export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
@@ -59,19 +65,46 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
         attachKeybind={command.keybindParts("file.attach")}
         attachShortcut={command.keybind("file.attach")}
         modelControl={
-          <PromptInputV2ModelControl
-            loading={props.controller.model.loading}
-            paid={props.controller.model.paid}
-            title={language.t("command.model.choose")}
-            keybind={command.keybindParts("model.choose")}
-            model={props.controller.model.selection}
-            providerID={props.controller.model.selection.current()?.provider?.id}
-            modelName={props.controller.model.selection.current()?.name ?? language.t("dialog.model.select.title")}
-            onClose={props.controller.restoreFocus}
-            onUnpaidClick={() =>
-              dialog.show(() => <DialogSelectModelUnpaidV2 model={props.controller.model.selection} />)
-            }
-          />
+          <>
+            <PromptInputV2ModelControl
+              loading={props.controller.model.loading}
+              paid={props.controller.model.paid}
+              title={language.t("command.model.choose")}
+              keybind={command.keybindParts("model.choose")}
+              model={props.controller.model.selection}
+              providerID={props.controller.model.selection.current()?.provider?.id}
+              modelName={props.controller.model.selection.current()?.name ?? language.t("dialog.model.select.title")}
+              onClose={props.controller.restoreFocus}
+              onUnpaidClick={() =>
+                dialog.show(() => <DialogSelectModelUnpaidV2 model={props.controller.model.selection} />)
+              }
+            />
+            <Show when={props.controller.networkPreset.visible}>
+              <TooltipV2
+                placement="top"
+                gutter={4}
+                value={
+                  props.controller.networkPreset.enabled
+                    ? `${language.t("settings.permissions.action.allow")}: ${language.t("settings.permissions.tool.webfetch.title")}, ${language.t("settings.permissions.tool.websearch.title")}`
+                    : `${language.t("settings.permissions.action.deny")}: ${language.t("settings.permissions.tool.webfetch.title")}, ${language.t("settings.permissions.tool.websearch.title")}`
+                }
+              >
+                <ButtonV2
+                  variant="ghost-muted"
+                  size="normal"
+                  style={{ height: "28px" }}
+                  data-action="prompt-network-preset"
+                  aria-pressed={props.controller.networkPreset.enabled}
+                  onClick={() => void props.controller.networkPreset.toggle()}
+                >
+                  {props.controller.networkPreset.enabled
+                    ? language.t("settings.permissions.action.allow")
+                    : language.t("settings.permissions.action.deny")}{" "}
+                  {language.t("settings.permissions.tool.websearch.title")}
+                </ButtonV2>
+              </TooltipV2>
+            </Show>
+          </>
         }
       />
     </div>
@@ -319,6 +352,23 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     })),
   )
   const variants = createMemo(() => ["default", ...props.controls.model.selection.variant.list()])
+  const networkPreset = createMemo(() => NetworkPreset.enabled(info()?.metadata))
+  const toggleNetworkPreset = async () => {
+    const session = info()
+    if (!session) return
+    await sdk()
+      .client.session.update({
+        sessionID: session.id,
+        directory: sdk().directory,
+        metadata: { ...session.metadata, [NetworkPreset.metadataKey]: !networkPreset() },
+      })
+      .catch(() =>
+        showToast({
+          title: language.t("settings.permissions.title"),
+          description: language.t("common.requestFailed"),
+        }),
+      )
+  }
   const controller = createPromptInputV2Controller({
     store: () => prompt.capture().store,
     state: interaction,
@@ -409,6 +459,17 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
     },
   })
   Object.defineProperty(controller, "model", { get: () => props.controls.model })
+  Object.defineProperty(controller, "networkPreset", {
+    value: {
+      get visible() {
+        return !!props.controls.session.id
+      },
+      get enabled() {
+        return networkPreset()
+      },
+      toggle: toggleNetworkPreset,
+    },
+  })
 
   command.register("prompt-input", () => [
     {

@@ -56,6 +56,7 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
+import { NetworkPreset } from "@opencode-ai/core/session/network-preset"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1084,6 +1085,9 @@ const layer = Layer.effect(
         let structured: unknown
         let step = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        if (NetworkPreset.enabled(session.metadata)) {
+          session.permission = NetworkPreset.apply(session.permission)
+        }
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1247,6 +1251,11 @@ const layer = Layer.effect(
                   structured = output
                 },
               })
+            }
+
+            if (NetworkPreset.enabled(session.metadata)) {
+              delete tools.webfetch
+              delete tools.websearch
             }
 
             if (step === 1)
