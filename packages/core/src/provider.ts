@@ -17,6 +17,7 @@ import { Credential } from "@opencode/schema/credential"
 import { Location } from "./location.js"
 import { freeze } from "immer"
 import { AISDKNative } from "./aisdk-native.js"
+import { CatalogVariants } from "./catalog-variants.js"
 
 export const ID = Provider.ID
 export type ID = typeof ID.Type
@@ -299,7 +300,12 @@ function index(providerID: ID, models: readonly Model.Info[]) {
   if (cached) return cached
   // Model shares these definitions without copying, so a foreign definition takes this provider's identity here.
   const result = freeze(
-    new Map(models.map((model) => [model.id, model.providerID === providerID ? model : { ...model, providerID }])),
+    new Map(
+      models.map((model) => [
+        model.id,
+        model.providerID === providerID ? model : Object.assign(CatalogVariants.copy(model), { providerID }),
+      ]),
+    ),
     true,
   )
   indexes.set(providerID, result)
@@ -381,7 +387,7 @@ const layer = Layer.effect(
                   current && models.has(current) && !Object.isFrozen(current)
                     ? current
                     : current
-                      ? structuredClone(current)
+                      ? CatalogVariants.copy(current)
                       : Model.Info.default(providerID, modelID)
                 ) as DeepMutable<Model.Info>
               update(model)

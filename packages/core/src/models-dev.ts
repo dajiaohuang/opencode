@@ -8,6 +8,7 @@ import { FSUtil } from "@opencode/util/fs-util"
 import { Bus } from "./bus.js"
 import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { httpClient } from "@opencode/util/effect/app-node-platform"
+import { CatalogVariants } from "./catalog-variants.js"
 import { Model } from "./model.js"
 import { AISDKNative } from "./aisdk-native.js"
 import { Provider } from "./provider.js"
@@ -113,16 +114,19 @@ function normalize(input: Record<string, SourceProvider>): readonly Snapshot[] {
       const id = Model.ID.make(model.id)
       const base = modelInfo(item, id, model, { cost: baseCost })
       const variants = Variant.resolve({ ...base, package: nativePackage(item, model) }, supports(model))
-      models.push({ ...base, variants })
+      models.push(CatalogVariants.bind({ ...base, variants }, nativePackage(item, model)))
       for (const [mode, options] of Object.entries(model.experimental?.modes ?? {})) {
         const modeID = Model.ID.make(`${model.id}-${mode}`)
         models.push(
-          modelInfo(item, modeID, model, {
-            name: modeName(model, mode),
-            cost: mergeCost(baseCost, options.cost),
-            request: options.provider,
-            variants,
-          }),
+          CatalogVariants.bind(
+            modelInfo(item, modeID, model, {
+              name: modeName(model, mode),
+              cost: mergeCost(baseCost, options.cost),
+              request: options.provider,
+              variants,
+            }),
+            nativePackage(item, model),
+          ),
         )
       }
     }

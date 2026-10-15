@@ -8,6 +8,7 @@ import { State } from "./state.js"
 import { Location } from "./location.js"
 import { freeze } from "immer"
 import { AISDKNative } from "./aisdk-native.js"
+import { CatalogVariants } from "./catalog-variants.js"
 
 export const ID = Model.ID
 export type ID = typeof ID.Type
@@ -116,7 +117,7 @@ const layer = Layer.effect(
           const current = models.get(modelID)
           if (!current) return undefined
           if (drafts.has(current)) return current as MutableInfo
-          const copy = structuredClone(current) as MutableInfo
+          const copy = CatalogVariants.copy(current) as MutableInfo
           drafts.add(copy)
           models.set(modelID, copy)
           return copy

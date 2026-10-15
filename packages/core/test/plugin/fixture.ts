@@ -19,6 +19,7 @@ import { Location } from "@opencode/core/location"
 import { ManagedPolicy } from "@opencode/core/managed-policy"
 import { Mcp } from "@opencode/core/mcp/index"
 import { Model } from "@opencode/core/model"
+import { ModelResolver } from "@opencode/core/model-resolver"
 import { Npm } from "@opencode/util/npm"
 import { Plugin } from "@opencode/core/plugin"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
@@ -91,6 +92,7 @@ export const makePluginTestLayer = (permission = permissionLayer) =>
       AISDK.node,
       Provider.node,
       Model.node,
+      ModelResolver.node,
       Command.node,
       Integration.node,
       KV.node,

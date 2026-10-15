@@ -5,6 +5,8 @@ import { Document, type Entry } from "@opencode/schema/config"
 import { ConfigProvider } from "@opencode/schema/config/provider"
 import { Money } from "@opencode/schema/money"
 import { Effect } from "effect"
+import { AISDKNative } from "../../aisdk-native.js"
+import { CatalogVariants } from "../../catalog-variants.js"
 import { Config } from "../../config.js"
 import { Model } from "../../model.js"
 import { Provider } from "../../provider.js"
@@ -43,6 +45,8 @@ export const Plugin = define({
 
     const sources = {
       defaultModel: undefined as Document["info"]["model"],
+      packages: new Map<string, Map<string, string>>(),
+      inherited: new Map<string, Map<string, string | undefined>>(),
       models: new Map<
         ConfigProvider.Info,
         {
@@ -53,6 +57,15 @@ export const Plugin = define({
     }
     yield* ctx.provider.transform((providers) => {
       const next: typeof sources.models = new Map()
+      const inherited = new Map(
+        providers
+          .list()
+          .map((record) => [
+            record.provider.id,
+            new Map(Array.from(record.models, ([id, model]) => [id, model.package ?? record.provider.package])),
+          ]),
+      )
+      const packages = new Map<string, Map<string, string>>()
       for (const [id, item] of configuredProviders(loaded.entries)) {
         const providerID = id
         const current = providers.get(providerID)
@@ -80,16 +93,51 @@ export const Plugin = define({
           const inherit = changed || !current?.models.has(id)
           // Bind the source at this point in the provider fold. Later source edits/removal
           // and its credential availability must not change an already-defined alias.
-          definitions.set(id, { inherit, base: base && structuredClone(base) })
+          definitions.set(id, { inherit, base: base && CatalogVariants.copy(base) })
+          if (config.package !== undefined) {
+            const overrides = packages.get(providerID) ?? new Map<string, string>()
+            const target = { package: config.package }
+            AISDKNative.rewrite(target, {
+              specifier: target.package,
+              providerID,
+              modelID: config.modelID ?? id,
+            })
+            overrides.set(id, target.package)
+            packages.set(providerID, overrides)
+          }
           if (!inherit) continue
+          const previous = inherited.get(providerID) ?? new Map<string, string | undefined>()
+          previous.set(id, inherited.get(source?.provider.id ?? providerID)?.get(base?.id ?? id))
+          inherited.set(providerID, previous)
           providers.models.update(providerID, id, (model) => {
-            if (base) Object.assign(model, structuredClone(base))
+            if (base) {
+              Object.assign(model, structuredClone(base))
+              const origin = CatalogVariants.source(base)
+              if (origin !== undefined) CatalogVariants.bind(model, origin)
+            }
             if (item.package !== undefined) model.package = undefined
             if (item.settings?.baseURL !== undefined && model.settings) delete model.settings.baseURL
           })
         }
         next.set(item, { providerID, models: definitions })
       }
+      // Alias bases are replayed in the late model fold. Do not restore stale variants
+      // there, but leave explicit configuration and later plugin transforms untouched.
+      for (const [item, definition] of next) {
+        const record = providers.get(definition.providerID)
+        for (const [id, source] of definition.models) {
+          if (!source.base) continue
+          const target =
+            packages.get(definition.providerID)?.get(id) ??
+            (item.package === undefined ? source.base.package : undefined) ??
+            record?.provider.package
+          const origin = CatalogVariants.source(source.base)
+          if (origin !== undefined && target !== origin && target !== inherited.get(definition.providerID)?.get(id))
+            Object.assign(source.base, { variants: [] })
+        }
+      }
+      sources.packages = packages
+      sources.inherited = inherited
       sources.defaultModel = Config.latest(loaded.entries, "model")
       sources.models = next
     })
@@ -97,6 +145,23 @@ export const Plugin = define({
     // Keep explicit model overrides in their late registration position, after external
     // model transforms. They can recreate or re-enable a model within an available provider.
     yield* ctx.model.transform((models) => {
+      const configured = new Set(Array.from(sources.models.values(), (definition) => definition.providerID))
+      for (const model of Array.from(configured).flatMap((providerID) => models.list(providerID))) {
+        const target =
+          sources.packages.get(model.providerID)?.get(model.id) ??
+          model.package ??
+          models.provider.get(model.providerID)?.provider.package
+        const origin = CatalogVariants.source(model)
+        if (
+          origin === undefined ||
+          target === origin ||
+          target === sources.inherited.get(model.providerID)?.get(model.id)
+        )
+          continue
+        models.update(model.providerID, model.id, (model) => {
+          model.variants = []
+        })
+      }
       const configuredDefault = sources.defaultModel
       if (configuredDefault !== undefined) models.default.set(configuredDefault.providerID, configuredDefault.model)
       for (const [item, definition] of sources.models) {
