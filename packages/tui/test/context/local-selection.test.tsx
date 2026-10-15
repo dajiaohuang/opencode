@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { agent, model, renderLocal, session } from "../fixture/local"
-import { json } from "../fixture/tui-client"
+import { directory, json } from "../fixture/tui-client"
 
 test("cycles all recent models in a stable order in both directions", async () => {
   await using setup = await renderLocal({
@@ -16,6 +16,19 @@ test("cycles all recent models in a stable order in both directions", async () =
     setup.local.model.cycle(-1)
     expect(setup.local.model.current()?.modelID).toBe(id)
   }
+})
+
+test("uses the connected server default ahead of the client recent model", async () => {
+  await using setup = await renderLocal({
+    models: [model("client"), model("server")],
+    preferences: { recent: [{ providerID: "provider", modelID: "client" }] },
+    fetch: (url) => {
+      if (url.pathname === "/api/model/default")
+        return json({ location: { directory }, data: model("server") })
+    },
+  })
+  await setup.waitFor(() => setup.local.model.current()?.modelID === "server")
+  expect(setup.local.model.current()?.modelID).toBe("server")
 })
 
 test("uses the last configured model and variant ahead of recents", async () => {

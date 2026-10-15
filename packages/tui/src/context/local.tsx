@@ -1,8 +1,9 @@
 import { createStore } from "solid-js/store"
 import { dedupeWith } from "effect/Array"
 import { createSimpleContext } from "./helper"
-import { batch, createMemo, onCleanup } from "solid-js"
+import { batch, createMemo, createResource, onCleanup } from "solid-js"
 import { useEvent } from "./event"
+import { useClient } from "./client"
 import path from "path"
 import { useTuiPaths } from "./runtime"
 import { useArgs } from "./args"
@@ -30,6 +31,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
     const data = useData()
+    const client = useClient()
     const toast = useToast()
     const theme = useTheme()
     const route = useRoute()
@@ -137,6 +139,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     function createModel() {
       type ModelSelection = ModelPreferenceModel & { variant?: string }
+      const [serverDefault] = createResource(
+        () => location.ref,
+        (ref) =>
+          client.api.model
+            .default(ref ? { location: { directory: ref.directory } } : undefined)
+            .then((response) => response.data)
+            .catch(() => undefined),
+      )
       const [preferences, setPreferences] = createStore<ModelPreference & { ready: boolean }>({
         ready: false,
         recent: [],
@@ -191,6 +201,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
         const configured = configuredModel()
         if (configured && isModelValid(configured)) return configured
+
+        const remote = serverDefault()
+        if (remote && isModelValid({ providerID: remote.providerID, modelID: remote.id }))
+          return { providerID: remote.providerID, modelID: remote.id }
 
         for (const item of preferences.recent) {
           if (isModelValid(item)) {
