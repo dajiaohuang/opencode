@@ -1271,3 +1271,77 @@ describe("PatchTool", () => {
     ),
   )
 })
+
+describe("PatchTool line-ending preservation", () => {
+  const cases = [
+    { name: "CRLF replacement", before: "old\r\nlast\r\n", body: "@@\n-old\n+NEW", after: "NEW\r\nlast\r\n" },
+    { name: "LF replacement", before: "old\nlast\n", body: "@@\n-old\n+NEW", after: "NEW\nlast\n" },
+    {
+      name: "BOM CRLF replacement",
+      before: "\ufeffold\r\nlast\r\n",
+      body: "@@\n-old\n+NEW",
+      after: "\ufeffNEW\r\nlast\r\n",
+    },
+    { name: "CRLF append", before: "first\r\nlast\r\n", body: "@@\n+NEW", after: "first\r\nlast\r\nNEW\r\n" },
+    { name: "CRLF delete", before: "first\r\nold\r\nlast\r\n", body: "@@\n-old", after: "first\r\nlast\r\n" },
+    {
+      name: "mixed isolated region",
+      before: "first\r\nold\r\nkeep\nlast\r\n",
+      body: "@@\n-old\n+NEW",
+      after: "first\r\nNEW\r\nkeep\nlast\r\n",
+    },
+    {
+      name: "mixed context must remain byte-exact",
+      before: "first\r\nold\r\nkeep\nlast\r\n",
+      body: "@@\n first\n-old\n+NEW\n keep",
+      after: "first\r\nNEW\r\nkeep\nlast\r\n",
+    },
+    {
+      name: "multiple regional hunks",
+      before: "a\r\nb\r\nc\nold\nz\r\n",
+      body: "@@\n-b\n+B\n@@\n-old\n+NEW",
+      after: "a\r\nB\r\nc\nNEW\nz\r\n",
+    },
+    {
+      name: "context between two changes keeps its own ending",
+      before: "old1\r\ncontext\nold2\r\nlast\r\n",
+      body: "@@\n-old1\n+NEW1\n context\n-old2\n+NEW2",
+      after: "NEW1\r\ncontext\nNEW2\r\nlast\r\n",
+    },
+    {
+      name: "mixed deletion leaves both context endings",
+      before: "first\r\nold\nlast\r\n",
+      body: "@@\n first\n-old\n last",
+      after: "first\r\nlast\r\n",
+    },
+    {
+      name: "CRLF context insertion",
+      before: "first\r\nlast\r\n",
+      body: "@@\n first\n+NEW\n last",
+      after: "first\r\nNEW\r\nlast\r\n",
+    },
+    {
+      name: "LF context insertion",
+      before: "first\nlast\n",
+      body: "@@\n first\n+NEW\n last",
+      after: "first\nNEW\nlast\n",
+    },
+    { name: "no final newline retains current patch contract", before: "old", body: "@@\n-old\n+NEW", after: "NEW\n" },
+  ]
+  for (const row of cases)
+    it.live(row.name, () =>
+      withTempTool((directory, registry) =>
+        Effect.gen(function* () {
+          const target = path.join(directory, "line-endings.txt")
+          yield* Effect.promise(() => fs.writeFile(target, row.before))
+          const settled = yield* executeTool(
+            registry,
+            call(`*** Begin Patch\n*** Update File: line-endings.txt\n${row.body}\n*** End Patch`),
+          )
+          expect(settled.status).toBe("completed")
+          const bytes = yield* Effect.promise(() => fs.readFile(target))
+          expect(bytes.toString("hex")).toBe(Buffer.from(row.after).toString("hex"))
+        }),
+      ),
+    )
+})

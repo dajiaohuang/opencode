@@ -130,7 +130,20 @@ export function derive(path: string, chunks: ReadonlyArray<UpdateFileChunk>, ori
   const lines = source.text.split("\n")
   if (lines.at(-1) === "") lines.pop()
   const replacements = computeReplacements(lines, path, chunks)
-  for (const [start, remove, insert] of replacements.reverse()) lines.splice(start, remove, ...insert)
+  for (const [start, remove, insert] of replacements.reverse()) {
+    const region = remove > 0 ? lines.slice(start, start + remove) : lines.slice(Math.max(0, start - 1), start + 1)
+    const crlfRegion = region.length > 0 && region.every((line) => line.endsWith("\r"))
+    const source =
+      !crlfRegion && region.some((line) => line.endsWith("\r"))
+        ? alignLines(lines.slice(start, start + remove), insert)
+        : []
+    const expanded = insert.map((line, index) => {
+      const original = source[index]
+      const crlf = original === undefined ? crlfRegion : lines[start + original]!.endsWith("\r")
+      return crlf && !line.endsWith("\r") ? line + "\r" : line
+    })
+    lines.splice(start, remove, ...expanded)
+  }
   if (lines.at(-1) !== "") lines.push("")
   const next = Bom.split(lines.join("\n"))
   return { content: next.text, bom: source.bom || next.bom }
@@ -339,6 +352,39 @@ function computeReplacements(lines: ReadonlyArray<string>, path: string, chunks:
     lineIndex = found + oldLines.length
   }
   return replacements.sort((left, right) => left[0] - right[0])
+}
+
+/** Keep context line endings; pair changed lines in each gap with the lines they replace. */
+function alignLines(before: ReadonlyArray<string>, after: ReadonlyArray<string>) {
+  const width = after.length + 1
+  const table = new Uint32Array((before.length + 1) * width)
+  for (let i = before.length - 1; i >= 0; i--)
+    for (let j = after.length - 1; j >= 0; j--)
+      table[i * width + j] = normalized(before[i]!, after[j]!)
+        ? table[(i + 1) * width + j + 1]! + 1
+        : Math.max(table[(i + 1) * width + j]!, table[i * width + j + 1]!)
+  const result: (number | undefined)[] = []
+  const gap = { before: [] as number[], after: [] as number[] }
+  const flush = () => {
+    gap.after.forEach((j, k) => (result[j] = gap.before[k]))
+    gap.before = []
+    gap.after = []
+  }
+  let i = 0
+  let j = 0
+  while (i < before.length && j < after.length) {
+    if (normalized(before[i]!, after[j]!)) {
+      flush()
+      result[j++] = i++
+      continue
+    }
+    if (table[(i + 1) * width + j]! >= table[i * width + j + 1]!) gap.before.push(i++)
+    else gap.after.push(j++)
+  }
+  while (i < before.length) gap.before.push(i++)
+  while (j < after.length) gap.after.push(j++)
+  flush()
+  return result
 }
 
 function seek(lines: ReadonlyArray<string>, pattern: ReadonlyArray<string>, start: number, eof = false) {
