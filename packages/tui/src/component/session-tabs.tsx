@@ -49,16 +49,15 @@ import { useDialog } from "../ui/dialog"
 import { useToast } from "../ui/toast"
 import { DialogSessionRename } from "./dialog-session-rename"
 import { Keymap } from "../context/keymap"
-import "./spinner-renderable"
 import { SPINNER_FRAMES } from "./spinner-frames"
 import { SessionTabsRailControls, SessionTabHalfRow } from "./session-tabs-rail"
 import "./title-shimmer"
 
 export const TAB_SPINNERS = {
-  dots: { frames: SPINNER_FRAMES, interval: 80 },
-  arcs: { frames: ["◜", "◝", "◞", "◟"], interval: 120 },
-  quadrants: { frames: ["◴", "◷", "◶", "◵"], interval: 120 },
-  line: { frames: ["|", "/", "-", "\\"], interval: 120 },
+  dots: { frames: SPINNER_FRAMES },
+  arcs: { frames: ["◜", "◝", "◞", "◟"] },
+  quadrants: { frames: ["◴", "◷", "◶", "◵"] },
+  line: { frames: ["|", "/", "-", "\\"] },
 }
 export type TabSpinner = keyof typeof TAB_SPINNERS
 
@@ -187,16 +186,10 @@ function TabIndicator(props: {
       justifyContent={props.centered ? "center" : "flex-end"}
       paddingRight={props.centered ? 0 : 1}
     >
-      <Show
-        when={runs() && props.animations && !props.numbers}
-        fallback={
-          <text fg={color()} selectable={false} attributes={props.attributes}>
-            {label()}
-          </text>
-        }
-      >
-        <spinner frames={spinner().frames} interval={spinner().interval} color={props.color} />
-      </Show>
+      {/* A static busy glyph avoids per-tab timers that redraw the full terminal. */}
+      <text fg={color()} selectable={false} attributes={props.attributes}>
+        {label()}
+      </text>
     </box>
   )
 }

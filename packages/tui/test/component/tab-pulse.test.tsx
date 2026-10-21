@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 /** @jsxImportSource @opentui/solid */
 import { RGBA } from "@opentui/core"
+import { ManualClock } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import {
@@ -26,6 +27,30 @@ test("a disabled pulse stays idle when it becomes active", async () => {
     expect(app.renderer.root.liveCount).toBe(0)
 
     setActive(true)
+    await app.renderOnce()
+    expect(app.renderer.root.liveCount).toBe(0)
+  } finally {
+    app.renderer.destroy()
+  }
+})
+
+test("a running sweep settles once while the session remains active", async () => {
+  const background = RGBA.fromHex("#101010")
+  const clock = new ManualClock()
+  const [active, setActive] = createSignal(false)
+  const app = await testRender(
+    () => <TabPulse active={active()} color={RGBA.fromHex("#82aaff")} backgroundColor={background} />,
+    { width: 24, height: 1, clock },
+  )
+
+  try {
+    app.renderer.pause()
+    await app.renderOnce()
+    setActive(true)
+    await app.renderOnce()
+    expect(app.renderer.root.liveCount).toBe(1)
+
+    clock.setTime(clock.now() + 2_800)
     await app.renderOnce()
     expect(app.renderer.root.liveCount).toBe(0)
   } finally {

@@ -31,7 +31,7 @@ type TabPulseOptions = RenderableOptions<TabPulseRenderable> & {
 
 export const clamp = (value: number) => Math.max(0, Math.min(1, value))
 export const smootherstep = (value: number) => value * value * value * (value * (value * 6 - 15) + 10)
-const RUN_DURATION = 2_800
+const RUN_DURATION = 2_800 // One sweep per active period.
 const RUN_ATTACK = 450
 const RUN_HEAD = 4
 const RUN_TAIL = 18
@@ -283,7 +283,7 @@ class PulseState {
   get live() {
     return (
       this.enabled &&
-      (this.active ||
+      ((this.active && this.sweepClock < RUN_DURATION) ||
         this.runEnvelope.animating ||
         this.glowEnvelope.animating ||
         this.completionPulse.active ||
@@ -328,8 +328,8 @@ class PulseState {
       this.completionPulse.stop()
       this.edgeFlash.stop()
       this.completionPending = false
-    } else if (this.active) {
-      // Re-enable resumes the sweep from its prior position, so no sweep clock reset here.
+    } else if (this.active && this.sweepClock < RUN_DURATION) {
+      // Re-enable resumes the remaining part of the current sweep.
       this.runEnvelope.trigger()
     }
     return true
@@ -388,8 +388,9 @@ class PulseState {
 
   advance(deltaTime: number) {
     if (!this.live) return
-    // The sweep keeps coasting from note-on through the release fade.
-    if (!this.runEnvelope.idle) this.sweepClock += deltaTime
+    // Keep the running sweep finite; the static tab indicator continues to show busy state.
+    if (!this.runEnvelope.idle && this.sweepClock < RUN_DURATION)
+      this.sweepClock = Math.min(RUN_DURATION, this.sweepClock + deltaTime)
     this.runEnvelope.advance(deltaTime)
     this.glowEnvelope.advance(deltaTime)
     this.completionPulse.advance(deltaTime)
@@ -407,11 +408,10 @@ class PulseState {
   private sweepFronts: [number, number] = [0, 0]
 
   fronts(width: number) {
-    const cycles = this.sweepClock / RUN_DURATION
-    const progress = cycles % 1
+    const progress = Math.min(this.sweepClock / RUN_DURATION, 1)
     const start = -RUN_HEAD
     const end = width - 1 + RUN_TAIL
-    const secondProgress = cycles < 0.5 ? 0 : (cycles + 0.5) % 1
+    const secondProgress = Math.min(Math.max(0, progress - 0.5) * 2, 1)
     this.sweepFronts[0] = start + coast(progress) * (end - start)
     this.sweepFronts[1] = start + coast(secondProgress) * (end - start)
     return this.sweepFronts
