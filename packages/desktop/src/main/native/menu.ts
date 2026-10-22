@@ -52,7 +52,11 @@ export function refreshMenu() {
 export function createMenu(deps: Deps) {
   installed = deps
 
-  if (process.platform !== "darwin") return
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null)
+
+    return
+  }
 
   const extra = menubar()
 
